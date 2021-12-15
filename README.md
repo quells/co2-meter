@@ -7,7 +7,10 @@ Uses the [SCD-30](https://www.adafruit.com/product/4867) sensor.
 Ports the I2C protocol to [Gobot](https://gobot.io/) from the
 [Adafruit Arduino library](https://github.com/adafruit/Adafruit_SCD30).
 
-This is meant to be deployed on a Raspberry Pi Zero W.
+This is meant to be deployed on a Raspberry Pi Zero W and
+visualized with Grafana.
+
+![Screenshot showing temperature, humidity, and CO2 concentration.](https://github.com/quells/co2-meter/blob/main/Grafana%20Screenshot.png?raw=true)
 
 ## Build and Deploy
 
