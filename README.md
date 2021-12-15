@@ -9,6 +9,8 @@ Ports the I2C protocol to [Gobot](https://gobot.io/) from the
 
 This is meant to be deployed on a Raspberry Pi Zero W.
 
+![Screenshot showing temperature, humidity, and CO2 concentration.](Grafana Screenshot.png)
+
 ## Build and Deploy
 
 ```
