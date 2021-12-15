@@ -11,6 +11,11 @@ import (
 	"gobot.io/x/gobot/drivers/i2c"
 )
 
+var (
+	ErrFailedChecksum = fmt.Errorf("failed checksum")
+	ErrNaN            = fmt.Errorf("invalid reading")
+)
+
 type Reading struct {
 	CO2  float64 // Carbon dioxide concentration, ppm
 	Temp float64 // Temperature, Celsius
@@ -115,7 +120,7 @@ func (d *Driver) initialize() (err error) {
 		}
 	}
 
-	log.Printf("Found firmware version %d for SCD-30", firmware)
+	log.Printf("Found firmware version %d for %s", firmware, d.name)
 
 	if err = d.StartContinuousMeasurement(); err != nil {
 		return err
@@ -145,7 +150,7 @@ func (d *Driver) SetMeasurementInterval(interval time.Duration) error {
 	return d.sendComandWithArg(cmdSetMeasurementInterval, uint16(secs))
 }
 
-func (d *Driver) UpdateLevels() (reading Reading, err error) {
+func (d *Driver) GetLevels() (reading Reading, err error) {
 	var buf []byte
 	buf, err = d.read(uint16(cmdReadMeasurement), 18)
 	if err != nil {
@@ -155,7 +160,7 @@ func (d *Driver) UpdateLevels() (reading Reading, err error) {
 	// check crc [ ... data data crc8 data data crc8 ... ]
 	for i := 0; i < 18; i += 3 {
 		if crc8(buf[i:i+2]) != buf[i+2] {
-			err = fmt.Errorf("failed checksum")
+			err = ErrFailedChecksum
 			return
 		}
 	}
@@ -168,14 +173,14 @@ func (d *Driver) UpdateLevels() (reading Reading, err error) {
 	temp := math.Float32frombits(binary.BigEndian.Uint32(tempData))
 	hum := math.Float32frombits(binary.BigEndian.Uint32(humData))
 
-	if math.IsNaN(float64(co2)) || math.IsNaN(float64(temp)) || math.IsNaN(float64(hum)) {
-		err = fmt.Errorf("invalid reading")
-		return
-	}
-
 	reading.CO2 = float64(co2)
 	reading.Temp = float64(temp)
 	reading.Hum = float64(hum)
+
+	if math.IsNaN(reading.CO2) || math.IsNaN(reading.Temp) || math.IsNaN(reading.Hum) {
+		err = ErrNaN
+		return
+	}
 
 	return
 }
@@ -204,7 +209,10 @@ func (d *Driver) read(addr uint16, n int) ([]byte, error) {
 		buf := make([]byte, 2)
 		buf[0] = byte(addr >> 8)
 		buf[1] = byte(addr & 0xFF)
-		// TODO: stop before reading?
+		// Note from Adafruit library: the SCD30 really wants a stop before the read!
+		// Not sure what this means - perhaps they are referencing the sleep between
+		// writing the register address and reading the value?
+		// Maybe you're supposed to stop measuring before reading, but it works anyways?
 		if _, err := d.connection.Write(buf); err != nil {
 			return nil, err
 		}

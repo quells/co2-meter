@@ -27,7 +27,7 @@ func main() {
 
 	work := func() {
 		gobot.Every(2*time.Second, func() {
-			if reading, err := co2Sensor.UpdateLevels(); err != nil {
+			if reading, err := co2Sensor.GetLevels(); err != nil {
 				log.Printf("Failed to check levels: %v", err)
 			} else {
 				prom.Air(reading.CO2, reading.Temp, reading.Hum)
