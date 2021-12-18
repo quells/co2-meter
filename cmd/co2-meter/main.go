@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/quells/co2-meter/drivers/i2c/scd30"
+	"github.com/quells/co2-meter/drivers/spi/ssd1351"
 	prom "github.com/quells/co2-meter/internal/metrics"
 	"gobot.io/x/gobot"
 	"gobot.io/x/gobot/platforms/raspi"
@@ -24,6 +25,7 @@ func main() {
 
 	adaptor := raspi.NewAdaptor()
 	co2Sensor := scd30.NewDriver(adaptor)
+	display := ssd1351.NewDriver(adaptor, 128, 128)
 
 	work := func() {
 		gobot.Every(2*time.Second, func() {
@@ -38,7 +40,7 @@ func main() {
 	robot := gobot.NewRobot(
 		"co2-meter",
 		[]gobot.Connection{adaptor},
-		[]gobot.Device{co2Sensor},
+		[]gobot.Device{co2Sensor, display},
 		work,
 	)
 
