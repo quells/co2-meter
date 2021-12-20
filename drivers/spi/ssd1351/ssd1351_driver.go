@@ -1,18 +1,20 @@
 package ssd1351
 
 import (
-	"log"
+	"fmt"
+	"time"
 
 	"gobot.io/x/gobot"
+	"gobot.io/x/gobot/drivers/gpio"
 	"gobot.io/x/gobot/drivers/spi"
 )
 
 type command byte
 
 const (
-	cmdSetColumn      command = 0x15
-	cmdSetRow         command = 0x75
-	cmdWriteRAM       command = 0x5C
+	cmdSetColumn      command = 0x15 // left right
+	cmdSetRow         command = 0x75 // top bottom
+	cmdWriteRAM       command = 0x5C // data...
 	cmdReadRAM        command = 0x5D // Not used
 	cmdSetRemap       command = 0xA0
 	cmdSetStartLine   command = 0xA1
@@ -49,14 +51,29 @@ type Driver struct {
 	connector  spi.Connector
 	connection spi.Connection
 
+	dcPin    *gpio.DirectPinDriver
+	resetPin *gpio.DirectPinDriver
+
 	w, h int
-	fb   []uint16
+	r    Rotation
+	// fb   []uint16
 
 	spi.Config
 }
 
-func NewDriver(c spi.Connector, w, h int, options ...func(spi.Config)) *Driver {
-	d := &Driver{}
+func NewDriver(c spi.Connector, dcPin, resetPin *gpio.DirectPinDriver, w, h int, options ...func(spi.Config)) *Driver {
+	d := &Driver{
+		name:      gobot.DefaultName("SSD1351"),
+		connector: c,
+		Config:    spi.NewConfig(),
+
+		dcPin:    dcPin,
+		resetPin: resetPin,
+
+		w: w,
+		h: h,
+		r: RotateUp,
+	}
 
 	for _, option := range options {
 		option(d)
@@ -78,17 +95,67 @@ func (d *Driver) Connection() gobot.Connection {
 }
 
 func (d *Driver) Start() (err error) {
-	return nil
-	// bus := d.GetBusOrDefault(d.connector.GetSpiDefaultBus())
+	bus := d.GetBusOrDefault(d.connector.GetSpiDefaultBus())
+	chip := d.GetChipOrDefault(d.connector.GetSpiDefaultChip())
+	mode := d.GetModeOrDefault(d.connector.GetSpiDefaultMode())
+	bits := d.GetModeOrDefault(d.connector.GetSpiDefaultBits())
+	speed := d.GetSpeedOrDefault(d.connector.GetSpiDefaultMaxSpeed())
 
-	// d.connector.GetSpiConnection()
+	d.connection, err = d.connector.GetSpiConnection(bus, chip, mode, bits, speed)
+	if err != nil {
+		return err
+	}
+
+	if err = d.initialize(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (d *Driver) Halt() (err error) {
-	return d.sendCommand(cmdDisplayOff)
+	if err = d.resetPin.Off(); err != nil {
+		return nil
+	}
+	if err = d.dcPin.Off(); err != nil {
+		return nil
+	}
+	if err = d.sendCommand(cmdDisplayOff); err != nil {
+		return nil
+	}
+
+	return nil
+}
+
+func (d *Driver) initialize() (err error) {
+	if err = d.Reset(); err != nil {
+		return err
+	}
+	if err = d.FillScreen(0); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (d *Driver) Reset() (err error) {
+	if err = d.dcPin.On(); err != nil {
+		return err
+	}
+
+	if err = d.resetPin.On(); err != nil {
+		return err
+	}
+	time.Sleep(100 * time.Millisecond)
+	if err = d.resetPin.Off(); err != nil {
+		return err
+	}
+	time.Sleep(100 * time.Millisecond)
+	if err = d.resetPin.On(); err != nil {
+		return err
+	}
+	time.Sleep(100 * time.Millisecond)
+
 	if err = d.sendCommand(cmdCommandLock, 0x12); err != nil {
 		return err
 	}
@@ -98,7 +165,7 @@ func (d *Driver) Reset() (err error) {
 	if err = d.sendCommand(cmdDisplayOff); err != nil {
 		return err
 	}
-	// 7:4 Oscillator Freq, 3:0 Clock Divider Ratio
+	// 7:4 Oscillator Freq = 15, 3:0 Clock Divider Ratio = 1
 	if err = d.sendCommand(cmdClockDivider, 0xF1); err != nil {
 		return err
 	}
@@ -156,6 +223,8 @@ const (
 // SetRotation of display. The image may change immediately, so clearing the
 // screen before changing rotation is recommended.
 func (d *Driver) SetRotation(r Rotation) (err error) {
+	d.r = r
+
 	/*
 		madctl bitmask
 		7,6 color depth (01 = 64k 565 RGB)
@@ -177,6 +246,8 @@ func (d *Driver) SetRotation(r Rotation) (err error) {
 		madctl |= 0b00000010 // column map rtl
 	case RotateLeft:
 		madctl |= 0b00000001 // vertical
+	default:
+		return fmt.Errorf("invalid rotation")
 	}
 
 	if err = d.sendCommand(cmdSetRemap, madctl); err != nil {
@@ -207,6 +278,52 @@ func (d *Driver) SetInverted(inverted bool) (err error) {
 	return d.sendCommand(cmd)
 }
 
+// FillScreen with a single color. Default color space is 565 RGB.
+func (d *Driver) FillScreen(color uint16) (err error) {
+	if err = d.sendCommand(cmdSetColumn, 0, byte(d.w-1)); err != nil {
+		return err
+	}
+	if err = d.sendCommand(cmdSetRow, 0, byte(d.h-1)); err != nil {
+		return err
+	}
+
+	hi := byte((color & 0xFF00) >> 8)
+	lo := byte(color & 0x00FF)
+	buf := make([]byte, 2*d.w*d.h)
+	for i := 0; i < d.w*d.h; i++ {
+		buf[2*i] = hi
+		buf[2*i+1] = lo
+	}
+	return d.sendCommand(cmdWriteRAM, buf...)
+}
+
+func (d *Driver) FillHalfScreen(color uint16) (err error) {
+	var cols, rows byte
+	if d.r == RotateUp || d.r == RotateDown {
+		cols = byte(d.w - 1)
+		rows = byte(d.h/2 - 1)
+	} else {
+		cols = byte(d.h/2 - 1)
+		rows = byte(d.w - 1)
+	}
+
+	if err = d.sendCommand(cmdSetColumn, 0, cols); err != nil {
+		return err
+	}
+	if err = d.sendCommand(cmdSetRow, 0, rows); err != nil {
+		return err
+	}
+
+	hi := byte((color & 0xFF00) >> 8)
+	lo := byte(color & 0x00FF)
+	buf := make([]byte, d.w*d.h)
+	for i := 0; i < d.w*d.h/2; i++ {
+		buf[2*i] = hi
+		buf[2*i+1] = lo
+	}
+	return d.sendCommand(cmdWriteRAM, buf...)
+}
+
 func (d *Driver) Enable() (err error) {
 	return d.sendCommand(cmdDisplayOn)
 }
@@ -216,6 +333,28 @@ func (d *Driver) Disable() (err error) {
 }
 
 func (d *Driver) sendCommand(cmd command, args ...byte) (err error) {
-	log.Printf("%x %v\n", cmd, args)
+	if err = d.dcPin.Off(); err != nil {
+		return err
+	}
+	if err = d.connection.Tx([]byte{byte(cmd)}, nil); err != nil {
+		return err
+	}
+	if err = d.dcPin.On(); err != nil {
+		return err
+	}
+
+	// SPI library has maximum buffer size
+	chunkSize := 4096
+	for i := 0; i < len(args); i += chunkSize {
+		j := i + chunkSize
+		if j > len(args) {
+			j = len(args)
+		}
+
+		if err = d.connection.Tx(args[i:j], nil); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

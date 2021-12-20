@@ -6,3 +6,8 @@ co2-meter:
 .PHONY: clean
 clean:
 	-rm co2-meter
+
+.PHONY: push
+push: co2-meter
+	scp co2-meter pi@zero:/home/pi
+	ssh zero
