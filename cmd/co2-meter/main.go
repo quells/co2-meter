@@ -50,9 +50,15 @@ func main() {
 
 		gobot.Every(5*time.Second, func() {
 			if err := cf.UpdateReadings(prom.GetLatestAir()); err != nil {
-				log.Printf("Failed to update clock: %v", err)
+				log.Printf("Failed to update values for display: %v", err)
 			} else if err = cf.DrawReadings(display); err != nil {
 				log.Printf("Failed to update display: %v", err)
+			}
+		})
+
+		gobot.Every(1*time.Second, func() {
+			if err := cf.DrawClock(display); err != nil {
+				log.Printf("Failed to update clock: %v", err)
 			}
 		})
 	}

@@ -2,7 +2,9 @@ package clockface
 
 import (
 	"fmt"
+	"log"
 	"math"
+	"net"
 
 	"github.com/quells/co2-meter/drivers/spi/ssd1351"
 )
@@ -10,6 +12,8 @@ import (
 const (
 	white  uint16 = 0xFFFF
 	black  uint16 = 0x0000
+	gray50 uint16 = 0b10000_100000_10000
+	gray25 uint16 = 0b01000_010000_01000
 	green  uint16 = 0b00000_101111_00000
 	yellow uint16 = 0b10111_101111_00000
 	orange uint16 = 0b10111_010111_00000
@@ -35,6 +39,8 @@ var jy = []int{
 type Clockface struct {
 	CharMap CharMap
 
+	ip   *FrameBuffer
+	dial *FrameBuffer
 	temp *FrameBuffer
 	co2  *FrameBuffer
 	hum  *FrameBuffer
@@ -43,19 +49,26 @@ type Clockface struct {
 }
 
 func New() *Clockface {
-	return &Clockface{
+	cf := Clockface{
 		CharMap: Elkgrove,
 
+		ip:   NewFrameBuffer(120, 8),
+		dial: NewFrameBuffer(100, 100),
 		temp: NewFrameBuffer(32, 8),
 		co2:  NewFrameBuffer(48, 8),
 		hum:  NewFrameBuffer(32, 8),
 	}
+
+	_ = cf.CharMap.Render(getCurrentIP(), gray50, black, 0, 0, cf.ip)
+	cf.dial.Circle(gray25, 50, 50, 48, 1)
+
+	return &cf
 }
 
 func (cf *Clockface) UpdateReadings(co2, temp, hum float64) (err error) {
 	{
 		msg := fmt.Sprintf("%3dF", int(math.Round(temp*1.8+32)))
-		if err = cf.CharMap.Render(msg, white, black, 0, 0, cf.temp); err != nil {
+		if err = cf.CharMap.Render(msg, gray50, black, 0, 0, cf.temp); err != nil {
 			return err
 		}
 	}
@@ -83,7 +96,7 @@ func (cf *Clockface) UpdateReadings(co2, temp, hum float64) (err error) {
 
 	{
 		msg := fmt.Sprintf("%3d%%", int(math.Round(hum)))
-		if err = cf.CharMap.Render(msg, white, black, 0, 0, cf.hum); err != nil {
+		if err = cf.CharMap.Render(msg, gray50, black, 0, 0, cf.hum); err != nil {
 			return err
 		}
 	}
@@ -110,6 +123,10 @@ func (cf *Clockface) DrawReadings(display *ssd1351.Driver) (err error) {
 		}
 	}
 
+	if err = cf.draw(display, cf.ip, 4, 2); err != nil {
+		return err
+	}
+
 	if err = cf.draw(display, cf.temp, 2, 118); err != nil {
 		return err
 	}
@@ -121,4 +138,34 @@ func (cf *Clockface) DrawReadings(display *ssd1351.Driver) (err error) {
 	}
 
 	return
+}
+
+func (cf *Clockface) DrawClock(display *ssd1351.Driver) (err error) {
+	return cf.draw(display, cf.dial, 14, 12)
+}
+
+func getCurrentIP() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		log.Printf("Could not get network interfaces: %v", err)
+		return ""
+	}
+
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			log.Printf("Could not get network addresses for interface: %v", err)
+			continue
+		}
+
+		for _, addr := range addrs {
+			if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+				if ipv4 := ipnet.IP.To4(); ipv4 != nil {
+					return fmt.Sprintf("%03d.%03d.%03d.%03d", ipv4[0], ipv4[1], ipv4[2], ipv4[3])
+				}
+			}
+		}
+	}
+
+	return ""
 }

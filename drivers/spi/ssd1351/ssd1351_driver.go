@@ -2,6 +2,7 @@ package ssd1351
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"gobot.io/x/gobot"
@@ -50,13 +51,13 @@ type Driver struct {
 	name       string
 	connector  spi.Connector
 	connection spi.Connection
+	lock       *sync.Mutex
 
 	dcPin    *gpio.DirectPinDriver
 	resetPin *gpio.DirectPinDriver
 
 	w, h int
 	r    Rotation
-	// fb   []uint16
 
 	spi.Config
 }
@@ -65,7 +66,7 @@ func NewDriver(c spi.Connector, dcPin, resetPin *gpio.DirectPinDriver, w, h int,
 	d := &Driver{
 		name:      gobot.DefaultName("SSD1351"),
 		connector: c,
-		Config:    spi.NewConfig(),
+		lock:      new(sync.Mutex),
 
 		dcPin:    dcPin,
 		resetPin: resetPin,
@@ -73,6 +74,8 @@ func NewDriver(c spi.Connector, dcPin, resetPin *gpio.DirectPinDriver, w, h int,
 		w: w,
 		h: h,
 		r: RotateUp,
+
+		Config: spi.NewConfig(),
 	}
 
 	for _, option := range options {
@@ -114,6 +117,9 @@ func (d *Driver) Start() (err error) {
 }
 
 func (d *Driver) Halt() (err error) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
 	if err = d.resetPin.Off(); err != nil {
 		return nil
 	}
@@ -139,6 +145,9 @@ func (d *Driver) initialize() (err error) {
 }
 
 func (d *Driver) Reset() (err error) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
 	if err = d.dcPin.On(); err != nil {
 		return err
 	}
@@ -223,6 +232,9 @@ const (
 // SetRotation of display. The image may change immediately, so clearing the
 // screen before changing rotation is recommended.
 func (d *Driver) SetRotation(r Rotation) (err error) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
 	d.r = r
 
 	/*
@@ -268,6 +280,9 @@ func (d *Driver) SetRotation(r Rotation) (err error) {
 }
 
 func (d *Driver) SetInverted(inverted bool) (err error) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
 	var cmd command
 	if inverted {
 		cmd = cmdInvertDisplay
@@ -280,6 +295,9 @@ func (d *Driver) SetInverted(inverted bool) (err error) {
 
 // FillScreen with a single color. Default color space is 565 RGB.
 func (d *Driver) FillScreen(color uint16) (err error) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
 	if err = d.sendCommand(cmdSetColumn, 0, byte(d.w-1)); err != nil {
 		return err
 	}
@@ -306,6 +324,9 @@ func (d *Driver) FillHalfScreen(color uint16) (err error) {
 }
 
 func (d *Driver) Write(x, y, w, h int, pixels []uint16) (err error) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
 	if len(pixels) != w*h {
 		return fmt.Errorf("invalid pixel buffer length")
 	}
@@ -336,10 +357,16 @@ func (d *Driver) Write(x, y, w, h int, pixels []uint16) (err error) {
 }
 
 func (d *Driver) Enable() (err error) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
 	return d.sendCommand(cmdDisplayOn)
 }
 
 func (d *Driver) Disable() (err error) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
 	return d.sendCommand(cmdDisplayOff)
 }
 
