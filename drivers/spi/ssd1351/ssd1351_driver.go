@@ -298,28 +298,39 @@ func (d *Driver) FillScreen(color uint16) (err error) {
 }
 
 func (d *Driver) FillHalfScreen(color uint16) (err error) {
-	var cols, rows byte
+	pixels := make([]uint16, d.w*d.h/2)
+	for i := range pixels {
+		pixels[i] = color
+	}
+	return d.Write(0, 0, d.w, d.h/2, pixels)
+}
+
+func (d *Driver) Write(x, y, w, h int, pixels []uint16) (err error) {
+	if len(pixels) != w*h {
+		return fmt.Errorf("invalid pixel buffer length")
+	}
+
+	var cols, rows int
 	if d.r == RotateUp || d.r == RotateDown {
-		cols = byte(d.w - 1)
-		rows = byte(d.h/2 - 1)
+		cols = w - 1
+		rows = h - 1
 	} else {
-		cols = byte(d.h/2 - 1)
-		rows = byte(d.w - 1)
+		cols = h - 1
+		rows = w - 1
+		x, y = y, x
 	}
 
-	if err = d.sendCommand(cmdSetColumn, 0, cols); err != nil {
+	if err = d.sendCommand(cmdSetColumn, byte(x), byte(x+cols)); err != nil {
 		return err
 	}
-	if err = d.sendCommand(cmdSetRow, 0, rows); err != nil {
+	if err = d.sendCommand(cmdSetRow, byte(y), byte(y+rows)); err != nil {
 		return err
 	}
 
-	hi := byte((color & 0xFF00) >> 8)
-	lo := byte(color & 0x00FF)
-	buf := make([]byte, d.w*d.h)
-	for i := 0; i < d.w*d.h/2; i++ {
-		buf[2*i] = hi
-		buf[2*i+1] = lo
+	buf := make([]byte, len(pixels)*2)
+	for i, px := range pixels {
+		buf[2*i] = byte((px & 0xFF00) >> 8)
+		buf[2*i+1] = byte(px & 0x00FF)
 	}
 	return d.sendCommand(cmdWriteRAM, buf...)
 }
