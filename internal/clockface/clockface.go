@@ -5,6 +5,7 @@ import (
 	"log"
 	"math"
 	"net"
+	"time"
 
 	"github.com/quells/co2-meter/drivers/spi/ssd1351"
 )
@@ -60,7 +61,6 @@ func New() *Clockface {
 	}
 
 	_ = cf.CharMap.Render(getCurrentIP(), gray50, black, 0, 0, cf.ip)
-	cf.dial.Circle(gray25, 50, 50, 48, 1)
 
 	return &cf
 }
@@ -141,6 +141,76 @@ func (cf *Clockface) DrawReadings(display *ssd1351.Driver) (err error) {
 }
 
 func (cf *Clockface) DrawClock(display *ssd1351.Driver) (err error) {
+	cf.dial.Reset()
+
+	cf.dial.Circle(gray25, 50, 50, 48)
+
+	var theta, ct, st float64
+	var x0, y0, x1, y1 int
+	for h := 0; h < 4; h++ {
+		// 12 3 6 9
+		theta = float64(h) * math.Pi * 0.5
+		ct = math.Cos(theta)
+		st = math.Sin(theta)
+		x0 = 50 + int(math.Round(40*ct))
+		y0 = 50 - int(math.Round(40*st))
+		x1 = 50 + int(math.Round(48*ct))
+		y1 = 50 - int(math.Round(48*st))
+		cf.dial.Line(gray25, x0, y0, x1, y1)
+
+		// 1 4 7 10
+		theta += math.Pi / 6
+		ct = math.Cos(theta)
+		st = math.Sin(theta)
+		x0 = 50 + int(math.Round(44*ct))
+		y0 = 50 - int(math.Round(44*st))
+		x1 = 50 + int(math.Round(48*ct))
+		y1 = 50 - int(math.Round(48*st))
+		cf.dial.Line(gray25, x0, y0, x1, y1)
+
+		// 2 5 8 11
+		theta += math.Pi / 6
+		ct = math.Cos(theta)
+		st = math.Sin(theta)
+		x0 = 50 + int(math.Round(44*ct))
+		y0 = 50 - int(math.Round(44*st))
+		x1 = 50 + int(math.Round(48*ct))
+		y1 = 50 - int(math.Round(48*st))
+		cf.dial.Line(gray25, x0, y0, x1, y1)
+	}
+
+	now := time.Now()
+	second := float64(now.Second()) / 30.0
+	minute := float64(now.Minute()) / 30.0
+	hour := float64(now.Hour()%12)/6.0 + minute/12.0
+
+	theta = (0.5 - minute) * math.Pi
+	ct = math.Cos(theta)
+	st = math.Sin(theta)
+	x1 = 50 + int(math.Round(46*ct))
+	y1 = 50 - int(math.Round(46*st))
+	cf.dial.Line(gray50, 50, 50, x1, y1)
+	cf.dial.Line(gray50, 51, 50, x1, y1)
+	cf.dial.Line(gray50, 50, 51, x1, y1)
+	cf.dial.Line(gray50, 51, 51, x1, y1)
+
+	theta = (0.5 - hour) * math.Pi
+	ct = math.Cos(theta)
+	st = math.Sin(theta)
+	x1 = 50 + int(math.Round(30*ct))
+	y1 = 50 - int(math.Round(30*st))
+	cf.dial.Line(gray50, 49, 49, x1, y1)
+	cf.dial.Line(gray50, 51, 49, x1, y1)
+	cf.dial.Line(gray50, 49, 51, x1, y1)
+	cf.dial.Line(gray50, 51, 51, x1, y1)
+
+	theta = (0.5 - second) * math.Pi
+	ct = math.Cos(theta)
+	st = math.Sin(theta)
+	x1 = 50 + int(math.Round(48*ct))
+	y1 = 50 - int(math.Round(48*st))
+	cf.dial.Line(red, 50, 50, x1, y1)
+
 	return cf.draw(display, cf.dial, 14, 12)
 }
 
