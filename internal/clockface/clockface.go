@@ -181,7 +181,7 @@ func (cf *Clockface) DrawClock(display *ssd1351.Driver) (err error) {
 
 	now := time.Now()
 	second := float64(now.Second()) / 30.0
-	minute := float64(now.Minute()) / 30.0
+	minute := float64(now.Minute())/30.0 + second/60.0
 	hour := float64(now.Hour()%12)/6.0 + minute/12.0
 
 	theta = (0.5 - minute) * math.Pi
