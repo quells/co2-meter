@@ -121,6 +121,9 @@ func (cf *Clockface) DrawReadings(display *ssd1351.Driver) (err error) {
 		if err = display.FillScreen(black); err != nil {
 			return err
 		}
+		if err = cf.DrawClock(display); err != nil {
+			return err
+		}
 	}
 
 	if err = cf.draw(display, cf.ip, 4, 2); err != nil {
