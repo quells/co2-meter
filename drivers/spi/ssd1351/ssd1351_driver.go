@@ -315,12 +315,39 @@ func (d *Driver) FillScreen(color uint16) (err error) {
 	return d.sendCommand(cmdWriteRAM, buf...)
 }
 
-func (d *Driver) FillHalfScreen(color uint16) (err error) {
-	pixels := make([]uint16, d.w*d.h/2)
-	for i := range pixels {
-		pixels[i] = color
+func (d *Driver) FillRect(color uint16, x, y, w, h int) (err error) {
+	if x+w > d.w || y+h > d.h {
+		return fmt.Errorf("rectangle is out of bounds")
 	}
-	return d.Write(0, 0, d.w, d.h/2, pixels)
+
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
+	var cols, rows int
+	if d.r == RotateUp || d.r == RotateDown {
+		cols = w - 1
+		rows = h - 1
+	} else {
+		cols = h - 1
+		rows = w - 1
+		x, y = y, x
+	}
+
+	if err = d.sendCommand(cmdSetColumn, byte(x), byte(x+cols)); err != nil {
+		return err
+	}
+	if err = d.sendCommand(cmdSetRow, byte(y), byte(y+rows)); err != nil {
+		return err
+	}
+
+	buf := make([]byte, w*h*2)
+	hi := byte((color & 0xFF00) >> 8)
+	lo := byte(color & 0x00FF)
+	for i := 0; i < w*h; i++ {
+		buf[2*i] = hi
+		buf[2*i+1] = lo
+	}
+	return d.sendCommand(cmdWriteRAM, buf...)
 }
 
 func (d *Driver) Write(x, y, w, h int, pixels []uint16) (err error) {

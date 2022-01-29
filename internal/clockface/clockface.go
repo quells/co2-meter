@@ -118,10 +118,10 @@ func (cf *Clockface) DrawReadings(display *ssd1351.Driver) (err error) {
 			cf.ji = 0
 		}
 
-		if err = display.FillScreen(black); err != nil {
+		if err = display.FillRect(black, 0, 0, 128, 12); err != nil {
 			return err
 		}
-		if err = cf.DrawClock(display); err != nil {
+		if err = display.FillRect(black, 0, 116, 128, 12); err != nil {
 			return err
 		}
 	}
